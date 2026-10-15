@@ -1,53 +1,66 @@
 # Student Profile Verification API (v6.0.0)
 
-Headless FastAPI backend for scholarship document collection and verification.
-The engine only checks completeness and flags problems; the admin makes every final decision.
+A headless FastAPI backend for collecting scholarship application documents and assisting with verification. The system performs automated completeness and OCR-based checks, surfaces potential issues as review flags, and leaves final decisions to administrators.
 
-## Setup
+Key characteristics
+- Headless API — intended to be used with a separate frontend.
+- Automated checks — completeness checks and optional OCR content extraction.
+- Admin-driven decisions — the engine flags problems; administrators perform the final review.
+- Signed, expiring URLs for CSV/dossier exports.
+
+Contents
+- Setup
+- OCR (optional)
+- Production checklist
+- Authentication
+- Integration examples
+- OCR via iLovePDF
+- Privacy notes
+
+## Quick start
+
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # set ADMIN_API_KEY and SIGNING_SECRET
-python main.py              # http://127.0.0.1:8001/docs
+python main.py              # then visit: http://127.0.0.1:8001/docs
 ```
 
 ## OCR (optional, recommended)
-- Windows: install Tesseract (UB-Mannheim build), auto-detected in Program Files
+- Windows: install Tesseract (UB-Mannheim build recommended). The service auto-detects Tesseract in Program Files.
 - Ubuntu/Debian: `sudo apt install tesseract-ocr`
 
-Without Tesseract, uploads are accepted but images are flagged NEEDS_MANUAL_CHECK for the admin.
-Check `GET /api/health` -> `ocr_available`.
-`STRICT_OCR=true` makes failed CNIC/Marksheet content checks block the application.
+If Tesseract is not available, uploads are accepted but images will be flagged as NEEDS_MANUAL_CHECK for admin review. Check `GET /api/health` -> `ocr_available` to see if OCR is enabled. Set `STRICT_OCR=true` to make failed CNIC/marksheet content checks block the application.
 
 ## Production checklist
-- `APP_ENV=production`, strong `ADMIN_API_KEY` and `SIGNING_SECRET`
-- `ALLOWED_ORIGINS` = real frontend domain(s); `PUBLIC_BASE_URL` if behind a proxy
-- Persistent disk for `storage/` and `data/` (otherwise wiped on redeploy)
-- HTTPS only; proxy body-size limit (e.g. nginx `client_max_body_size 40m`)
-- Regular backups of `data/applications.db` and `storage/`
+- Set `APP_ENV=production`, and choose strong values for `ADMIN_API_KEY` and `SIGNING_SECRET`.
+- Configure `ALLOWED_ORIGINS` with your frontend domains. Set `PUBLIC_BASE_URL` when running behind a proxy.
+- Use a persistent disk for `storage/` and `data/` (these directories are ephemeral on some hosts and will be wiped on redeploy).
+- Serve over HTTPS; configure proxy limits for uploads (e.g., nginx `client_max_body_size 40m`).
+- Regularly back up `data/applications.db` and the `storage/` directory.
 
-## Auth
-| Who | How |
-|---|---|
-| Student | `Authorization: Bearer <access_token>` (returned once on first submission) |
-| Admin | `X-Admin-Key: <ADMIN_API_KEY>` |
-| CSV / dossier links | Signed, expiring URLs |
+## Authentication
+- Student: `Authorization: Bearer <access_token>` (an access token is returned on first submission).
+- Admin: `X-Admin-Key: <ADMIN_API_KEY>`.
+- CSV / dossier links: signed, time-limited URLs.
 
-See INTEGRATION_GUIDE.md for frontend examples.
+See INTEGRATION_GUIDE.md for example frontend workflows and request examples.
 
+## OCR with iLovePDF (optional)
+1. Create a free account at https://www.iloveapi.com/signup and copy your project Public Key.
+2. Add `ILOVEPDF_PUBLIC_KEY=project_public_...` to your `.env` and restart the server.
+3. Confirm in `GET /api/health` that `"ocr_provider": "ilovepdf"`.
 
-## OCR with iLovePDF (v6.1)
-1. Create a free account at https://www.iloveapi.com/signup and copy your project **Public Key**.
-2. Put it in `.env`: `ILOVEPDF_PUBLIC_KEY=project_public_...`
-3. Restart the server. `GET /api/health` should show `"ocr_provider": "ilovepdf"`.
+Notes:
+- Text PDFs are parsed locally for free. Scanned PDFs and photos are sent to iLovePDF OCR (max 5 pages per document).
+- Original filenames are never sent to the OCR provider; remote tasks are deleted after download.
+- OCR results are cached per document to avoid repeated usage of OCR credits.
+- Extracted fields include CNIC number, father name, date of birth, roll number, marks, percentage, CGPA, passing year, board/university, and degree.
+- The system cross-checks fields (e.g., CNIC front vs back, CNIC vs marksheet). Failed checks are presented as admin review flags and do not auto-reject applications.
 
-Text PDFs are read locally for free; scanned PDFs and photos go to iLovePDF OCR (max 5 pages,
-original filenames are never sent, the remote task is deleted right after download).
-OCR text is cached per document, so re-checks never spend credits twice.
+## Privacy
+When using third-party OCR (e.g., iLovePDF), student documents may be processed on their servers in the configured `ILOVEPDF_REGION`. Include this in your student consent and privacy notice.
 
-Extracted fields: CNIC number, father name, date of birth, roll no, marks, percentage, CGPA,
-passing year, board/university, degree. Cross-checks: CNIC front vs back, father name and DOB
-CNIC vs marksheet/degree, CNIC/B-form number on marksheet, optional MIN_PERCENTAGE / MIN_CGPA.
-Failed checks are review flags for the admin; they never auto-reject.
-
-Privacy: student documents are processed on iLovePDF servers in `ILOVEPDF_REGION`.
-Mention this in your student consent / privacy notice.
+## Notes and recommendations
+- The application focuses on flagging and assisting reviews; it is not intended to make irrevocable decisions without human oversight.
+- Configure monitoring and backups before moving to production.
+- For integration examples and more details, refer to INTEGRATION_GUIDE.md.
